@@ -172,11 +172,11 @@ class PMTChannel(DeviceChannel):
         l = self.modbus.read_holding_registers(address=0x0E, count=6, slave=self.address).registers
         hvsn = pack(f'>{len(l)}h', *l).decode().rstrip('\x00')
         l = self.modbus.read_holding_registers(address=0x36, count=6, slave=self.address).registers
-        return {"fwver": fwver, "pmtsn": pmtsn, "hvsn": hvsn, "febsn": unpackSN(l)}
+        return {"fwver": fwver, "pmtsn": pmtsn, "hvsn": hvsn, "febsn": self.unpackSN(l)}
 
     @staticmethod
     def unpackSN(l: list) -> str:
-        ascii_bytes = struct.pack('>3H', *l[3:6])
+        ascii_bytes = pack('>3H', *l[3:6])
         ascii_text = ascii_bytes.decode('ascii', errors='ignore').strip('\x00')
         integer_val = l[2]
         def BCD_to_hex(bcd_byte: int):
