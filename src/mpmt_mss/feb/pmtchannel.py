@@ -171,9 +171,40 @@ class PMTChannel(DeviceChannel):
         pmtsn = pack(f'>{len(l)}h', *l).decode().rstrip('\x00')
         l = self.modbus.read_holding_registers(address=0x0E, count=6, slave=self.address).registers
         hvsn = pack(f'>{len(l)}h', *l).decode().rstrip('\x00')
-        l = self.modbus.read_holding_registers(address=0x04, count=2, slave=self.address).registers
-        devid = (l[1] << 16) + l[0]
-        return {"fwver": fwver, "pmtsn": pmtsn, "hvsn": hvsn, "febsn": str(devid)}
+        l = self.client.read_holding_registers(address=0x36, count=6, slave=self.address).registers
+        return {"fwver": fwver, "pmtsn": pmtsn, "hvsn": hvsn, "febsn": unpackSN(l)}
+
+    @staticmethod
+    def unpackSN(l: list) -> str:
+        ascii_bytes = struct.pack('>3H', *l[3:6])
+        ascii_text = ascii_bytes.decode('ascii', errors='ignore').strip('\x00')
+        integer_val = l[2]
+        def BCD_to_hex(bcd_byte: int):
+            res = 0
+            multiplier = 1
+            while bcd_byte > 0:
+               digit = bcd_byte & 0x0F
+               if digit > 9:
+                   raise ValueError(f"Value BCD not valid: 0x{bcd_byte:04X}")
+               res += digit * multiplier
+               multiplier *= 10
+               bcd_byte >>= 4
+            return res
+        coord_x = BCD_to_hex(l[1])
+        coord_y = BCD_to_hex(l[0])
+        return ascii_text+str(integer_val)+str(coord_x)+str(coord_y)
+
+    def safe_write_registers(self, address, values, slave=None):
+        slave = self.address if slave is None else slave
+        base_addr = address
+
+        for i, val in enumerate(values):
+            addr = base_addr + i
+            try:
+                self.client.write_register(address=addr, value=val, slave=slave)
+            except Exception as e:
+                print(f"Exception at reg 0x{addr:02X}: {e}")
+
 
     @DeviceChannel.track_connection
     def setPMTSerialNumber(self, sn: str):
