@@ -171,7 +171,7 @@ class PMTChannel(DeviceChannel):
         pmtsn = pack(f'>{len(l)}h', *l).decode().rstrip('\x00')
         l = self.modbus.read_holding_registers(address=0x0E, count=6, slave=self.address).registers
         hvsn = pack(f'>{len(l)}h', *l).decode().rstrip('\x00')
-        l = self.client.read_holding_registers(address=0x36, count=6, slave=self.address).registers
+        l = self.modbus.read_holding_registers(address=0x36, count=6, slave=self.address).registers
         return {"fwver": fwver, "pmtsn": pmtsn, "hvsn": hvsn, "febsn": unpackSN(l)}
 
     @staticmethod
@@ -201,7 +201,7 @@ class PMTChannel(DeviceChannel):
         for i, val in enumerate(values):
             addr = base_addr + i
             try:
-                self.client.write_register(address=addr, value=val, slave=slave)
+                self.modbus.write_register(address=addr, value=val, slave=slave)
             except Exception as e:
                 print(f"Exception at reg 0x{addr:02X}: {e}")
 
