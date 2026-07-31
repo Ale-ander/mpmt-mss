@@ -175,24 +175,13 @@ class PMTChannel(DeviceChannel):
         return {"fwver": fwver, "pmtsn": pmtsn, "hvsn": hvsn, "febsn": self.unpackSN(l)}
 
     @staticmethod
-    def unpackSN(l: list) -> str:
-        ascii_bytes = pack('>3H', *l[3:6])
-        ascii_text = ascii_bytes.decode('ascii', errors='ignore').strip('\x00')
-        integer_val = l[2]
-        def BCD_to_hex(bcd_byte: int):
-            res = 0
-            multiplier = 1
-            while bcd_byte > 0:
-               digit = bcd_byte & 0x0F
-               if digit > 9:
-                   raise ValueError(f"Value BCD not valid: 0x{bcd_byte:04X}")
-               res += digit * multiplier
-               multiplier *= 10
-               bcd_byte >>= 4
-            return res
-        coord_x = BCD_to_hex(l[1])
-        coord_y = BCD_to_hex(l[0])
-        return ascii_text+str(integer_val)+str(coord_x)+str(coord_y)
+    def unpackSN(registers: list[int]) -> str:
+        uid = pack("<6H", *registers)
+        lot = (uid[0:3] + uid[4:8]).decode("ascii")
+        wafer = uid[3]
+        unique = int.from_bytes(uid[8:12], "little")
+
+        return f"{lot}{wafer:03d}{unique:08X}"
 
     def safe_write_registers(self, address, values, slave=None):
         slave = self.address if slave is None else slave
