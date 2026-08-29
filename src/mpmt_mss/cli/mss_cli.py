@@ -304,6 +304,7 @@ def _build_namespace_parser(ns_name: str, spec: list) -> "cmd2.Cmd2ArgumentParse
 FPGA_PARSER = _build_namespace_parser("fpga", mssclient.NAMESPACE_SPEC["fpga"])
 SENSORS_PARSER = _build_namespace_parser("sensors", mssclient.NAMESPACE_SPEC["sensors"])
 FEBMGR_PARSER = _build_namespace_parser("febmgr", mssclient.NAMESPACE_SPEC["febmgr"])
+MONITORING_PARSER = _build_namespace_parser("monitoring", mssclient.NAMESPACE_SPEC["monitoring"])
 
 RAW_PARSER = cmd2.Cmd2ArgumentParser(
     description="Raw RPC call, useful for methods not yet present in NAMESPACE_SPEC."
@@ -606,6 +607,12 @@ class MSSShell(cmd2.Cmd):
     def do_febmgr(self, args: argparse.Namespace):
         """Methods of the febmgr namespace (PMT/LED channels)."""
         self._dispatch("febmgr", args)
+
+    @cmd2.with_category("RPC commands")
+    @cmd2.with_argparser(MONITORING_PARSER)
+    def do_monitoring(self, args: argparse.Namespace):
+        """Methods of the monitoring namespace (aggregated snapshot)."""
+        self._dispatch("monitoring", args)
 
     # -- convenience: act on every defined channel at once ---------------
 
