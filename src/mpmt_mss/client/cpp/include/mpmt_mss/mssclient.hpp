@@ -292,9 +292,25 @@ class SensorsNamespace {
   BaseRpcClient& client_;
 };
 
+class MonitoringNamespace {
+ public:
+  explicit MonitoringNamespace(BaseRpcClient& client) : client_(client) {}
+
+  // One RPC round trip for a full monitoring cycle - same shape
+  // BuildMssMonitoringSnapshot (m-pmt-daq-interface) used to assemble from
+  // 9 separate calls into sensors/febmgr/fpga: {"sensors":..., "channels":...,
+  // "fpga":{"deadtime":...,"housekeeping":...,"fifo_status":...,
+  // "firmware_info":...,"rate_all":...,"clock":...,"tr32":...}}.
+  nlohmann::json snapshot();
+
+ private:
+  BaseRpcClient& client_;
+};
+
 // client.febmgr.getStatus(...)   -> wire method "febmgr.getStatus"
 // client.fpga.readRegister(...)  -> wire method "fpga.readRegister"
 // client.sensors.read()          -> wire method "sensors.read"
+// client.monitoring.snapshot()   -> wire method "monitoring.snapshot"
 class MSSClient : public BaseRpcClient {
  public:
   explicit MSSClient(const std::string& url, double timeout_sec = 10.0);
@@ -302,6 +318,7 @@ class MSSClient : public BaseRpcClient {
   FebmgrNamespace febmgr;
   FpgaNamespace fpga;
   SensorsNamespace sensors;
+  MonitoringNamespace monitoring;
 };
 
 }  // namespace mpmt_mss

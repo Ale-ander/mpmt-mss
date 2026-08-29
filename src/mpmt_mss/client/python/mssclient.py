@@ -260,7 +260,11 @@ FPGA_METHODS: list[tuple[str, ParamSpecDef, type]] = [
 SENSORS_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("read",                        [],                                                                    dict),
 ]
- 
+
+MONITORING_METHODS: list[tuple[str, list[ParamSpec], type]] = [
+    ("snapshot",                    [],                                                                    dict),
+]
+
 # One entry per JSON-RPC prefix. The dict key is both the wire-level prefix
 # (key + ".") and the attribute name exposed on the client
 # (e.g., client.febmgr, client.fpga, client.sensors).
@@ -268,6 +272,7 @@ NAMESPACE_SPEC: dict[str, list[tuple[str, list[ParamSpec], type]]] = {
     "febmgr": FEBMGR_METHODS,
     "fpga": FPGA_METHODS,
     "sensors": SENSORS_METHODS,
+    "monitoring": MONITORING_METHODS,
 }
 
 

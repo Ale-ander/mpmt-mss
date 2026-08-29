@@ -747,11 +747,13 @@ std::string FpgaNamespace::stopAcquisition() {
 
 json SensorsNamespace::read() { return client_.call("sensors.read", json::array()); }
 
+json MonitoringNamespace::snapshot() { return client_.call("monitoring.snapshot", json::array()); }
+
 // ---------------------------------------------------------------------------
 // MSSClient
 // ---------------------------------------------------------------------------
 
 MSSClient::MSSClient(const std::string& url, double timeout_sec)
-    : BaseRpcClient(url, timeout_sec), febmgr(*this), fpga(*this), sensors(*this) {}
+    : BaseRpcClient(url, timeout_sec), febmgr(*this), fpga(*this), sensors(*this), monitoring(*this) {}
 
 }  // namespace mpmt_mss
