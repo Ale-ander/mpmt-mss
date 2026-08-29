@@ -3,12 +3,14 @@ from mpmt_mss.rpc import RPCRuntime, create_app
 from mpmt_mss.runcontrol.fpga import FPGA
 from mpmt_mss.feb import FEBManager, ModbusConfig
 from mpmt_mss.sensors import HouseKeeping
+from mpmt_mss.monitoring import Monitoring
 
 febmgr = FEBManager(ModbusConfig(mode="rtu", port="/dev/ttyPS1"))
 
 # core objects
 fpga = FPGA('/dev/uio0')
 hk = HouseKeeping(fpga)
+monitoring = Monitoring(febmgr, fpga, hk)
 
 runtime = RPCRuntime()
 
@@ -16,6 +18,7 @@ runtime = RPCRuntime()
 runtime.register_service("fpga", fpga)
 runtime.register_service("sensors", hk)
 runtime.register_service("febmgr", febmgr)
+runtime.register_service("monitoring", monitoring)
 
 app = create_app(runtime)
 
