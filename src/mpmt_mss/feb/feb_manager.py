@@ -13,7 +13,8 @@ from mpmt_mss.rpc import rpc_service, rpc_method
 FEB_RPC_METHODS: list[str] = [
 
     # PMT
-    "getPMTStatus",
+    # getPMTStatus is not routed generically: FEBManager defines its own
+    # version to keep REG_HV_STATUS in sync as soon as a channel's status is read
     "getPMTVoltage",
     "getPMTVoltageSet",
     "setPMTVoltageSet",
@@ -24,9 +25,13 @@ FEB_RPC_METHODS: list[str] = [
     "setPMTRateRampup",
     "setPMTRateRampdown",
     "setPMTLimitVoltage",
+    "getPMTLimitVoltage",
     "setPMTLimitCurrent",
+    "getPMTLimitCurrent",
     "setPMTLimitTemperature",
+    "getPMTLimitTemperature",
     "setPMTLimitTriptime",
+    "getPMTLimitTriptime",
     "setPMTThreshold",
     "getPMTThreshold",
     "getPMTAlarm",
@@ -50,6 +55,15 @@ FEB_RPC_METHODS: list[str] = [
     "powerLEDOn",    
     "powerLEDOff",    
     "getLEDInfo",
+    "getLEDErrorRegisters",
+    "getLEDBurstConfig",
+    "setLEDBurstConfig",
+    "setLEDBurstConfigIn",
+    "getLEDBurstKey",
+    "setLEDBurstKey",
+    "startLEDBurst",
+    "getLEDBurstStatus",
+    "clearLEDBurstStatus",
     "setLEDTrigger",
     "getLEDTriggerStatus",
     "setLEDBias",
@@ -68,6 +82,9 @@ FEB_RPC_METHODS: list[str] = [
 
 @rpc_service()
 class FEBManager:
+    # PMTChannel.STATUS_MAP values where HV is above 0V (UP, RUP, RDN, TUP, TDN)
+    PMT_HV_ON_STATUS_VALUES = {0, 2, 3, 4, 5}
+
     def __init__(self, cfg: ModbusConfig, config_from_fpga=True):
         self.modbus = ModbusManager(cfg)
         self.fpga = FPGA('/dev/uio0')
@@ -76,18 +93,14 @@ class FEBManager:
 
         # channels are labeled from J1 to J19 (1...19)
         self._channels = [ FEBChannel(i) for i in range(20) ]
+        self._led_rank = 0
+        self._overcurrentLatch = 0
 
         self._rpc_methods: list[str] = []
         self._generate_routed_methods()        
 
-        # register 103 bit (x) is '1' for PMT channel, '0' for LED channel
         if config_from_fpga:
-            pmtmask = self.fpga.readRegister(103)
-            for ch in range(19):       # 0...18
-                if pmtmask & 1<<ch:
-                    self.configure(DeviceType.PMT, ch+1, ch+1)
-                else:
-                    self.configure(DeviceType.LED, ch+1, ch+21)
+            self._configureFromFpga()
 
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self.probe_task)
@@ -146,8 +159,18 @@ class FEBManager:
         return self._channels[i]
 
     def clear(self):
-        for i in range(20):
+        for i in range(1, 20):
             self.channel(i).detach()
+        self._led_rank = 0
+
+    # register 103 bit (x) is '1' for PMT channel, '0' for LED channel
+    def _configureFromFpga(self):
+        pmtmask = self.fpga.readRegister(103)
+        for ch in range(19):       # 0...18
+            if pmtmask & 1<<ch:
+                self.configure(DeviceType.PMT, ch+1, ch+1)
+            else:
+                self.configure(DeviceType.LED, ch+1, ch+21)
 
     def setup(self, cfg: list[DeviceConfig]):
         self.clear()
@@ -162,7 +185,8 @@ class FEBManager:
         if dtype == DeviceType.PMT:
             device = PMTChannel(self.modbus, channel, address)
         elif dtype == DeviceType.LED:
-            device = LEDChannel(self.modbus, channel, address)
+            device = LEDChannel(self.modbus, channel, address, self._led_rank)
+            self._led_rank += 1
         else:
             raise ValueError(f"Invalid channel type: {dtype}")
         self.channel(channel).attach(device)
@@ -204,6 +228,12 @@ class FEBManager:
         value &= self.UINT32_MASK
         self.fpga.writeRegister(register, value)
 
+    def _updateHVStatusBit(self, channel: int, statusValue: int):
+        if statusValue in self.PMT_HV_ON_STATUS_VALUES:
+            self._setRegisterBits(self.fpga.REG_HV_STATUS, self._channelMask(channel))
+        else:
+            self._clearRegisterBits(self.fpga.REG_HV_STATUS, self._channelMask(channel))
+
 
     @rpc_method
     def call(self, channel: int, method: str, params: dict):
@@ -215,6 +245,12 @@ class FEBManager:
         bound = sig.bind(**params)
 
         return mth(*bound.args, **bound.kwargs)
+
+    @rpc_method
+    def getPMTStatus(self, channel: int) -> dict:
+        status = self.channel(channel).device.getPMTStatus()
+        self._updateHVStatusBit(channel, status["value"])
+        return status
 
     @rpc_method
     def getDefinedChannels(self, dtype: DeviceType = None):
@@ -280,6 +316,7 @@ class FEBManager:
                         "Threshold": PMTreport["threshold"],
                         "Alarm": PMTreport["alarm"]
                     }
+                    self._updateHVStatusBit(ch, PMTreport["status"]["value"])
                 elif self.channel(ch).device.DEVICE_TYPE == "LED":
                     report[str(ch)] = {
                         "type": self.channel(ch).device.DEVICE_TYPE,
@@ -288,6 +325,94 @@ class FEBManager:
             except Exception as e:
                 raise Exception(f"Error reading channel {ch}: {e}")
         return report
+
+    # ------------------------------------------------------------------
+    # Overcurrent latch, register 2 (main power rail, not HV)
+    # bits clear on hardware read, so we OR them into a software latch
+    # ------------------------------------------------------------------
+    @rpc_method
+    def getOvercurrentChannels(self) -> list[int]:
+        """Channels forcibly powered off by an overcurrent on their main power rail."""
+        self._overcurrentLatch |= self.fpga.readRegister(2)
+        return [ch for ch in range(1, 20) if self._overcurrentLatch & self._channelMask(ch)]
+
+    @rpc_method
+    def clearOvercurrentLatch(self):
+        """Acknowledge and clear the software-side overcurrent latch."""
+        self._overcurrentLatch = 0
+
+    # ------------------------------------------------------------------
+    # Modbus address alignment: power one board at a time and force it onto
+    # the address dictated by its FPGA wiring (register 103), so this
+    # doesn't have to be scripted externally.
+    # ------------------------------------------------------------------
+    def _alignChannel(self, channel: int, dtype: DeviceType, target: int,
+                       timeout: float, poll_interval: float):
+        """Power just this channel, retry the forced-address broadcast until
+        a readback at the target address succeeds or timeout elapses."""
+        self.enableChannel([channel])
+        deadline = time.time() + timeout
+        last_err = None
+        try:
+            while time.time() < deadline:
+                try:
+                    if dtype == DeviceType.PMT:
+                        self.setPMTModbusAddressForced(target)
+                        self.modbus.read_holding_registers(address=6, count=1, slave=target)
+                    else:
+                        self.setLEDModbusAddressForced(target)
+                        self.modbus.read_input_registers(address=30001, count=1, slave=target)
+                    return True, None
+                except Exception as e:
+                    last_err = e
+                    time.sleep(poll_interval)
+            return False, str(last_err)
+        finally:
+            self.disableChannel([channel])
+
+    @rpc_method
+    def alignModbusAddresses(self, channels: list[int] = None, timeout: float = 5.0,
+                              poll_interval: float = 0.25, reconfigure: bool = True) -> dict:
+        """Assign Modbus addresses without external scripting: for each
+        channel, power only that board, broadcast its target address (PMT:
+        channel, LED: channel+20, from the register 103 wiring), and confirm
+        it by reading back at that address before moving on to the next
+        channel - retrying on the broadcast+readback until timeout if the
+        board isn't up yet.
+
+        All other channels are powered off for the duration (their online
+        status will drop and recover on its own via probe_task). Channels
+        that fail are reported in "failed" and left untouched; if at least
+        one channel succeeded, "reconfigure" (default True) re-attaches the
+        whole board from register 103 (not just the channels just aligned),
+        so it's usable immediately without waiting for a restart.
+        """
+        pmtmask = self.fpga.readRegister(103)
+        if channels is None:
+            channels = list(range(1, 20))
+
+        self.disableAllChannels()
+        ok, failed = [], {}
+
+        for ch in channels:
+            dtype = DeviceType.PMT if (pmtmask & self._channelMask(ch)) else DeviceType.LED
+            target = ch if dtype == DeviceType.PMT else ch + 20
+            success, err = self._alignChannel(ch, dtype, target, timeout, poll_interval)
+            if success:
+                ok.append({"channel": ch, "type": dtype, "address": target})
+            else:
+                failed[str(ch)] = err
+
+        if reconfigure and ok:
+            # Full repopulation from register 103, not just the channels just
+            # aligned: _led_rank has to be recomputed for the whole board in
+            # ascending channel order to stay in sync with the FPGA's own
+            # per-LED-FEB slot numbering, and channels outside this call's
+            # scope must not lose their existing configuration.
+            self.clear()
+            self._configureFromFpga()
+
+        return {"ok": ok, "failed": failed}
 
     # ------------------------------------------------------------------
     # Global FEB methods
@@ -325,6 +450,13 @@ class FEBManager:
         self.modbus.write_register(address=0x00, value=addr, slave=0, no_response_expected=True)
         time.sleep(0.05) # critical since there is no response
 
+    @rpc_method
+    def setLEDModbusAddressForced(self, addr: int):
+        """Force modbus address to all LED channels turned on"""
+        self._validateRange(addr, 21, 39, "address")
+        self.modbus.write_register(address=40006, value=addr, slave=0, no_response_expected=True)
+        time.sleep(0.05) # critical since there is no response
+
     # ------------------------------------------------------------------
     # Turn on/off channels, register 1
     # ------------------------------------------------------------------
@@ -335,11 +467,13 @@ class FEBManager:
         for ch in channels:
             self._setRegisterBits(1, self._channelMask(ch))
 
+    #for safety we also disable the acquisition to prevent boot mode at startup.
     @rpc_method
     def disableChannel(self, channels: list[int]):
         """Turn off channels using a list"""
         for ch in channels:
             self._clearRegisterBits(1, self._channelMask(ch))
+            self._clearRegisterBits(0, self._channelMask(ch))
 
     @rpc_method
     def enableAllChannels(self):
@@ -350,17 +484,18 @@ class FEBManager:
     def disableAllChannels(self):
         """Turn off all channels"""
         self.fpga.writeRegister(1, 0)
+        self.fpga.writeRegister(0, 0)
 
     @rpc_method
     def enableChannelsByMask(self, mask: int):
-        """Turn off multiple channels using a bitmask"""
+        """Turn on multiple channels using a bitmask"""
         for ch in range(19):
             if mask & (1 << ch):
                 self.enableChannel([ch+1])
 
     @rpc_method
     def disableChannelsByMask(self, mask: int):
-        """Turn on multiple channels using a bitmask"""
+        """Turn off multiple channels using a bitmask"""
         for ch in range(19):
             if mask & (1 << ch):
                 self.disableChannel([ch+1])
@@ -501,15 +636,21 @@ class FEBManager:
 
     @rpc_method
     def getTimeToPeak(self) -> dict[str, int]:
-        """Get all channels time-to-peak."""
+        """Get all channels time-to-peak, in setTimeToPeakChannel()'s units.
+
+        setTimeToPeakChannel divides by 3.7 to fit its 0..0xFFF input into
+        the register's 12 bit field; this used to return the raw encoded
+        value with no inverse conversion, so set(42) read back as 11.
+        """
         ttps = {}
         for ch in range(19):
             register = 28 + ch // 2
             value = self.fpga.readRegister(register)
             if ch % 2 == 1:
-                ttps[str(ch+1)] = value & 0xFFF
+                encoded = value & 0xFFF
             else:
-                ttps[str(ch+1)] = (value >> 12) & 0xFFF
+                encoded = (value >> 12) & 0xFFF
+            ttps[str(ch+1)] = round(encoded * 3.7)
         return ttps
 
 
@@ -613,3 +754,51 @@ class FEBManager:
             register = 8 + ch
             rates[str(ch+1)] = self.fpga.readRegister(register)
         return rates
+
+    # ------------------------------------------------------------------
+    # Run preparation
+    # ------------------------------------------------------------------
+    def _waitOnline(self, channels: list[int], timeout: float) -> list[int]:
+        deadline = time.time() + timeout
+        while True:
+            online = [ch for ch in channels if self.channel(ch).device.online]
+            if len(online) == len(channels) or time.time() >= deadline:
+                return online
+            time.sleep(0.25)
+
+    @rpc_method
+    def prepareForRun(self, timeout: float = 10.0) -> dict:
+        """Enable configured PMT channels, wait for them to probe online,
+        then enable acquisition and trigger on the ones that made it."""
+        self.fpga.setFifoReset(True)
+
+        channels = self.getDefinedChannels(DeviceType.PMT)
+        self.enableChannel(channels)
+
+        online = self._waitOnline(channels, timeout)
+        offline = [ch for ch in channels if ch not in online]
+
+        self.enableAcqChannel(online)
+        self.enableTriggerChannel(online)
+        self.fpga.setPulserFrequency(1)
+        self.enablePulserChannel(online)
+
+        for ch in online:
+            self.powerPMTOn(ch)
+
+        self.fpga.setFifoReset(False)
+
+        return {"enabled": channels, "online": online, "offline": offline, "hvStarted": online}
+
+    @rpc_method
+    def getHVReadyChannels(self, channels: list[int] = None) -> dict:
+        """Split PMT channels by HV ramp completion (status UP vs still ramping/down/tripped)."""
+        if channels is None:
+            channels = self.getOnlineChannels(DeviceType.PMT)
+
+        ready, notReady = [], []
+        for ch in channels:
+            status = self.channel(ch).device.getPMTStatus()["value"]
+            (ready if status == 0 else notReady).append(ch)
+
+        return {"ready": ready, "notReady": notReady}

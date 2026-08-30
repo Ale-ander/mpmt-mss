@@ -83,6 +83,8 @@ class FebmgrNamespace {
   std::vector<int> getOnlineChannels(std::optional<DeviceType> channel_type = std::nullopt);
   std::vector<int> getOfflineChannels(std::optional<DeviceType> channel_type = std::nullopt);
   nlohmann::json getStatus(std::optional<DeviceType> channel_type = std::nullopt);
+  std::vector<int> getOvercurrentChannels();
+  void clearOvercurrentLatch();
   void enableChannel(const std::vector<int>& channels);
   void disableChannel(const std::vector<int>& channels);
   void enableAllChannels();
@@ -137,6 +139,13 @@ class FebmgrNamespace {
   void powerPMTOffAll();
   void setPMTThresholdAll(double value);
   void setPMTModbusAddressForced(int addr);
+  void setLEDModbusAddressForced(int addr);
+
+  // Modbus address alignment
+  nlohmann::json alignModbusAddresses(std::optional<std::vector<int>> channels = std::nullopt,
+                                       std::optional<double> timeout = std::nullopt,
+                                       std::optional<double> poll_interval = std::nullopt,
+                                       std::optional<bool> reconfigure = std::nullopt);
 
   nlohmann::json getPMTStatus(int channel);
   double getPMTVoltage(int channel);
@@ -149,9 +158,13 @@ class FebmgrNamespace {
   void setPMTRateRampup(int channel, int value);
   void setPMTRateRampdown(int channel, int value);
   void setPMTLimitVoltage(int channel, int value);
+  int getPMTLimitVoltage(int channel);
   void setPMTLimitCurrent(int channel, int value);
+  int getPMTLimitCurrent(int channel);
   void setPMTLimitTemperature(int channel, int value);
+  int getPMTLimitTemperature(int channel);
   void setPMTLimitTriptime(int channel, int value);
+  int getPMTLimitTriptime(int channel);
   void setPMTThreshold(int channel, double value);
   double getPMTThreshold(int channel);
   nlohmann::json getPMTAlarm(int channel);
@@ -171,6 +184,17 @@ class FebmgrNamespace {
 
   nlohmann::json getLEDStatus(int channel);
   nlohmann::json getLEDInfo(int channel);
+  nlohmann::json getLEDErrorRegisters(int channel);
+  nlohmann::json getLEDBurstConfig(int channel);
+  void setLEDBurstConfig(int channel, int64_t startTimeS, int64_t startTime4ns,
+                          int64_t flashInterval4ns, int64_t flashCount);
+  void setLEDBurstConfigIn(int channel, int64_t secondsFromNow, int64_t sub4ns,
+                            int64_t flashInterval4ns, int64_t flashCount);
+  int64_t getLEDBurstKey(int channel);
+  void setLEDBurstKey(int channel, int64_t key);
+  void startLEDBurst(int channel);
+  nlohmann::json getLEDBurstStatus(int channel);
+  void clearLEDBurstStatus(int channel);
   nlohmann::json getLEDTriggerStatus(int channel);
   nlohmann::json getLEDBiasStatus(int channel);
   double getLEDBiasVoltage(int channel);
@@ -187,6 +211,10 @@ class FebmgrNamespace {
   void setLEDBiasVoltage(int channel, double value);
   void setLEDChannels(int channel, const std::vector<int>& channels,
                        std::optional<bool> append = std::nullopt);
+
+  // Run preparation
+  nlohmann::json prepareForRun(std::optional<double> timeout = std::nullopt);
+  nlohmann::json getHVReadyChannels(std::optional<std::vector<int>> channels = std::nullopt);
 
  private:
   BaseRpcClient& client_;
@@ -210,6 +238,8 @@ class FpgaNamespace {
   void setClockCable(int cable);
   nlohmann::json getClockStatus();
   nlohmann::json getTr32Status();
+  nlohmann::json getErrorCounters();
+  int64_t getTr32Counter();
 
   // Tr32 and TagT
   void enableTr32Channel();
@@ -262,9 +292,25 @@ class SensorsNamespace {
   BaseRpcClient& client_;
 };
 
+class MonitoringNamespace {
+ public:
+  explicit MonitoringNamespace(BaseRpcClient& client) : client_(client) {}
+
+  // One RPC round trip for a full monitoring cycle - same shape
+  // BuildMssMonitoringSnapshot (m-pmt-daq-interface) used to assemble from
+  // 9 separate calls into sensors/febmgr/fpga: {"sensors":..., "channels":...,
+  // "fpga":{"deadtime":...,"housekeeping":...,"fifo_status":...,
+  // "firmware_info":...,"rate_all":...,"clock":...,"tr32":...}}.
+  nlohmann::json snapshot();
+
+ private:
+  BaseRpcClient& client_;
+};
+
 // client.febmgr.getStatus(...)   -> wire method "febmgr.getStatus"
 // client.fpga.readRegister(...)  -> wire method "fpga.readRegister"
 // client.sensors.read()          -> wire method "sensors.read"
+// client.monitoring.snapshot()   -> wire method "monitoring.snapshot"
 class MSSClient : public BaseRpcClient {
  public:
   explicit MSSClient(const std::string& url, double timeout_sec = 10.0);
@@ -272,6 +318,7 @@ class MSSClient : public BaseRpcClient {
   FebmgrNamespace febmgr;
   FpgaNamespace fpga;
   SensorsNamespace sensors;
+  MonitoringNamespace monitoring;
 };
 
 }  // namespace mpmt_mss

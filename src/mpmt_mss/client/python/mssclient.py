@@ -115,6 +115,8 @@ FEBMGR_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("getOnlineChannels",       [("channel_type", Optional[DeviceType], False)],        List[int]),
     ("getOfflineChannels",      [("channel_type", Optional[DeviceType], False)],        List[int]),
     ("getStatus",               [("channel_type", Optional[DeviceType], False)],        List[dict]),
+    ("getOvercurrentChannels",  [],                                                     List[int]),
+    ("clearOvercurrentLatch",   [],                                                     type(None)),
     ("enableChannel",           [("channels", List[int], True)],                        type(None)),
     ("disableChannel",          [("channels", List[int], True)],                        type(None)),
     ("enableAllChannels",       [],                                                     type(None)),
@@ -149,6 +151,8 @@ FEBMGR_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("powerPMTOffAll",          [],                                                     type(None)),
     ("setPMTThresholdAll",      [("value", float, True)],                               type(None)),
     ("setPMTModbusAddressForced", [("addr", int, True)],                                type(None)),
+    ("setLEDModbusAddressForced", [("addr", int, True)],                                type(None)),
+    ("alignModbusAddresses",    [("channels", Optional[List[int]], False), ("timeout", Optional[float], False), ("poll_interval", Optional[float], False), ("reconfigure", Optional[bool], False)], dict),
     ("getRateChannel",          [("channel", int, True)],                               int),
     ("getRateAll",              [],                                                     dict[str, int]),
 
@@ -164,9 +168,13 @@ FEBMGR_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("setPMTRateRampup",        [("channel", int, True), ("value", int, True)],         type(None)),
     ("setPMTRateRampdown",      [("channel", int, True), ("value", int, True)],         type(None)),
     ("setPMTLimitVoltage",      [("channel", int, True), ("value", int, True)],         type(None)),
+    ("getPMTLimitVoltage",      [("channel", int, True)],                               int),
     ("setPMTLimitCurrent",      [("channel", int, True), ("value", int, True)],         type(None)),
+    ("getPMTLimitCurrent",      [("channel", int, True)],                               int),
     ("setPMTLimitTemperature",  [("channel", int, True), ("value", int, True)],         type(None)),
+    ("getPMTLimitTemperature",  [("channel", int, True)],                               int),
     ("setPMTLimitTriptime",     [("channel", int, True), ("value", int, True)],         type(None)),
+    ("getPMTLimitTriptime",     [("channel", int, True)],                               int),
     ("setPMTThreshold",         [("channel", int, True), ("value", float, True)],       type(None)),
     ("getPMTThreshold",         [("channel", int, True)],                               float),
     ("getPMTAlarm",             [("channel", int, True)],                               dict),
@@ -184,9 +192,18 @@ FEBMGR_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("writePMTCalibOffset",     [("channel", int, True), ("value", float, True)],       type(None)), 
     ("writePMTCalibDiscr",      [("channel", int, True), ("value", float, True)],       type(None)), 
 
-    ("getLEDStatus",            [("channel", int, True)],                               dict), 
-    ("getLEDInfo",              [("channel", int, True)],                               dict), 
-    ("getLEDTriggerStatus",     [("channel", int, True)],                               dict), 
+    ("getLEDStatus",            [("channel", int, True)],                               dict),
+    ("getLEDInfo",              [("channel", int, True)],                               dict),
+    ("getLEDErrorRegisters",    [("channel", int, True)],                               dict),
+    ("getLEDBurstConfig",       [("channel", int, True)],                               dict),
+    ("setLEDBurstConfig",       [("channel", int, True), ("startTimeS", int, True), ("startTime4ns", int, True), ("flashInterval4ns", int, True), ("flashCount", int, True)], type(None)),
+    ("setLEDBurstConfigIn",     [("channel", int, True), ("secondsFromNow", int, True), ("sub4ns", int, True), ("flashInterval4ns", int, True), ("flashCount", int, True)], type(None)),
+    ("getLEDBurstKey",          [("channel", int, True)],                               int),
+    ("setLEDBurstKey",          [("channel", int, True), ("key", int, True)],           type(None)),
+    ("startLEDBurst",           [("channel", int, True)],                               type(None)),
+    ("getLEDBurstStatus",       [("channel", int, True)],                               dict),
+    ("clearLEDBurstStatus",     [("channel", int, True)],                               type(None)),
+    ("getLEDTriggerStatus",     [("channel", int, True)],                               dict),
     ("getLEDBiasStatus",        [("channel", int, True)],                               dict), 
     ("getLEDBiasVoltage",       [("channel", int, True)],                               float),
     ("readLEDBiasVoltage",      [("channel", int, True)],                               float),
@@ -200,7 +217,11 @@ FEBMGR_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("setLEDTriggerSource",     [("channel", int, True), ("source", TriggerSource, True)],  type(None)),
     ("setLEDBias",              [("channel", int, True), ("value", bool, True)],        type(None)),
     ("setLEDBiasVoltage",       [("channel", int, True), ("value", float, True)],       type(None)),
-    ("setLEDChannels",          [("channel", int, True), ("channels", List[int], True), ("append", Optional[bool], False)], type(None))
+    ("setLEDChannels",          [("channel", int, True), ("channels", List[int], True), ("append", Optional[bool], False)], type(None)),
+
+    # Run preparation
+    ("prepareForRun",           [("timeout", Optional[float], False)],                  dict),
+    ("getHVReadyChannels",      [("channels", Optional[List[int]], False)],             dict),
 ]
 
 FPGA_METHODS: list[tuple[str, ParamSpecDef, type]] = [
@@ -214,6 +235,8 @@ FPGA_METHODS: list[tuple[str, ParamSpecDef, type]] = [
     ("setClockCable",               [("cable", int, True)],                                                type(None)),
     ("getClockStatus",              [],                                                                    dict),
     ("getTr32Status",               [],                                                                    dict),
+    ("getErrorCounters",            [],                                                                    dict),
+    ("getTr32Counter",              [],                                                                    int),
     ("enableTr32Channel",           [],                                                                    type(None)),
     ("disableTr32Channel",          [],                                                                    type(None)),
     ("requestAdcCalibration",       [],                                                                    type(None)),
@@ -237,7 +260,11 @@ FPGA_METHODS: list[tuple[str, ParamSpecDef, type]] = [
 SENSORS_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("read",                        [],                                                                    dict),
 ]
- 
+
+MONITORING_METHODS: list[tuple[str, list[ParamSpec], type]] = [
+    ("snapshot",                    [],                                                                    dict),
+]
+
 # One entry per JSON-RPC prefix. The dict key is both the wire-level prefix
 # (key + ".") and the attribute name exposed on the client
 # (e.g., client.febmgr, client.fpga, client.sensors).
@@ -245,6 +272,7 @@ NAMESPACE_SPEC: dict[str, list[tuple[str, list[ParamSpec], type]]] = {
     "febmgr": FEBMGR_METHODS,
     "fpga": FPGA_METHODS,
     "sensors": SENSORS_METHODS,
+    "monitoring": MONITORING_METHODS,
 }
 
 

@@ -75,3 +75,12 @@ A C++ client with the same shape (`mpmt_mss::MSSClient`) is also available
 under `src/mpmt_mss/client/cpp/` for C++ consumers (see
 `docs/slow-control-variables.md` in `mpmt-daq-interface` for one real usage
 example).
+
+## Known gaps
+
+- `febmgr.getLEDErrorRegisters` (Modbus 30002-30006): returns the raw values
+  for now, exact meaning of each field not yet confirmed against hardware.
+- FPGA registers 64-84 and 90-102 (LED pulser subsystem: per-LED burst
+  start time, pulse interval, pulse count, start-key in/out, LED-FEB
+  status/clear/address) are not implemented — semantics not fully
+  understood yet. 
