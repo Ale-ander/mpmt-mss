@@ -767,12 +767,14 @@ class FEBManager:
             time.sleep(0.25)
 
     @rpc_method
-    def prepareForRun(self, timeout: float = 10.0) -> dict:
-        """Enable configured PMT channels, wait for them to probe online,
-        then enable acquisition and trigger on the ones that made it."""
-        self.fpga.setFifoReset(True)
+    def prepareForRun(self, timeout: float = 10.0, channels: list[int] = None) -> dict:
+        """Enable the given PMT channels (all defined PMT channels if none
+        given), wait for them to probe online, then enable acquisition and
+        trigger on the ones that made it."""
+        if channels is None:
+            channels = self.getDefinedChannels(DeviceType.PMT)
 
-        channels = self.getDefinedChannels(DeviceType.PMT)
+        self.fpga.setFifoReset(True)
         self.enableChannel(channels)
 
         online = self._waitOnline(channels, timeout)
