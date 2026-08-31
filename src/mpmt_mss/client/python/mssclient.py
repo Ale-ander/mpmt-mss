@@ -220,7 +220,7 @@ FEBMGR_METHODS: list[tuple[str, list[ParamSpec], type]] = [
     ("setLEDChannels",          [("channel", int, True), ("channels", List[int], True), ("append", Optional[bool], False)], type(None)),
 
     # Run preparation
-    ("prepareForRun",           [("timeout", Optional[float], False)],                  dict),
+    ("prepareForRun",           [("timeout", Optional[float], False), ("channels", Optional[List[int]], False)], dict),
     ("getHVReadyChannels",      [("channels", Optional[List[int]], False)],             dict),
 ]
 

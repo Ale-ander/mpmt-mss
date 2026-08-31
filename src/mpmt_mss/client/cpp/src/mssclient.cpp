@@ -581,9 +581,11 @@ void FebmgrNamespace::setLEDChannels(int channel, const std::vector<int>& channe
 // Run preparation
 // ------------------------------------------------------------------
 
-json FebmgrNamespace::prepareForRun(std::optional<double> timeout) {
+json FebmgrNamespace::prepareForRun(std::optional<double> timeout,
+                                     std::optional<std::vector<int>> channels) {
   json params = json::array();
   if (timeout.has_value()) params.push_back(*timeout);
+  if (channels.has_value()) params.push_back(*channels);
   return client_.call("febmgr.prepareForRun", params);
 }
 
