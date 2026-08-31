@@ -414,7 +414,7 @@ class FPGA:
 
         dateHex = f"{dateValue:08x}"
         timeHex = f"{timeValue:08x}"
-        versionHex = f"{versionValue:x}"
+        versionHex = f"{versionValue:08x}"
 
         major = versionHex[0]
         minorText = versionHex[1:3]

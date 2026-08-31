@@ -1,6 +1,6 @@
-from mpmt_mss.rpc import rpc_method
+from mpmt_mss.rpc import rpc_service, rpc_method
 
-
+@rpc_service()
 class Monitoring:
     """Aggregates one full tooldaq monitoring cycle behind a single RPC call.
 
