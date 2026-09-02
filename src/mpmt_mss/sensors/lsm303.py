@@ -43,8 +43,11 @@ class LSM303Magnet:
 
     def readAll(self):
         output = []
-        # OUTX_L_REG_M..OUTZ_H_REG_M = 6 bytes
-        d = self._read_block(self.address, self.OUTX_L_REG_M, 6)
+        # OUTX_L_REG_M..OUTZ_H_REG_M = 6 bytes - | 0x80 enables auto-increment
+        # of the sub-address across the burst read (same requirement as the
+        # accelerometer's OUT_X_L_A below); without it every byte comes back
+        # from OUTX_L_REG_M itself, never advancing.
+        d = self._read_block(self.address, self.OUTX_L_REG_M | 0x80, 6)
         output.append(self._int16(d[0], d[1]) * self.SCALE)  # X
         output.append(self._int16(d[2], d[3]) * self.SCALE)  # Y
         output.append(self._int16(d[4], d[5]) * self.SCALE)  # Z
