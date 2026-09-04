@@ -83,12 +83,69 @@ class FebmgrNamespace {
   std::vector<int> getOnlineChannels(std::optional<DeviceType> channel_type = std::nullopt);
   std::vector<int> getOfflineChannels(std::optional<DeviceType> channel_type = std::nullopt);
   nlohmann::json getStatus(std::optional<DeviceType> channel_type = std::nullopt);
-  void enableChannel(int channel);
-  void disableChannel(int channel);
-  void enableChannels(const std::vector<int>& channels);
-  void disableChannels(const std::vector<int>& channels);
+  std::vector<int> getOvercurrentChannels();
+  void clearOvercurrentLatch();
+  void enableChannel(const std::vector<int>& channels);
+  void disableChannel(const std::vector<int>& channels);
+  void enableAllChannels();
+  void disableAllChannels();
   void enableChannelsByMask(uint32_t mask);
   void disableChannelsByMask(uint32_t mask);
+
+  // Acquisition enable, register 0
+  void enableAcqChannel(const std::vector<int>& channels);
+  void disableAcqChannel(const std::vector<int>& channels);
+  void enableAcqAll();
+  void disableAcqAll();
+
+  // Channel clear/block, register 5
+  void clearChannel(const std::vector<int>& channels);
+  void freeChannel(const std::vector<int>& channels);
+  void clearAll();
+  void freeAll();
+
+  // Trigger enable, register 58
+  void enableTriggerChannel(const std::vector<int>& channels);
+  void disableTriggerChannel(const std::vector<int>& channels);
+  void enableAllTrigger();
+  void disableAllTrigger();
+
+  // Pulser channel enable, register 59
+  void enablePulserChannel(const std::vector<int>& channels);
+  void disablePulserChannel(const std::vector<int>& channels);
+  void enableAllPulser();
+  void disableAllPulser();
+
+  // Time to peak, registers 28..37
+  void setTimeToPeakChannel(int channel, int value);
+  void setAllTimeToPeak(int value);
+  nlohmann::json getTimeToPeak();
+
+  // Per-channel delay, registers 38..42
+  void setDelayChannel(int channel, int value);
+  void setAllDelay(int value);
+
+  // Ratemeter thresholds, registers 46..55
+  void setRateThresholdChannel(int channel, int value);
+  nlohmann::json getRateThreshold();
+  void setAllRateThreshold(int value);
+
+  // Ratemeters
+  int64_t getRateChannel(int channel);
+  nlohmann::json getRateAll();
+
+  // Global FEB methods
+  void powerPMTOnAll();
+  void powerPMTOffAll();
+  void setPMTThresholdAll(double value);
+  void setPMTModbusAddressForced(int addr);
+  void setLEDModbusAddressForced(int addr);
+
+  // Modbus address alignment
+  nlohmann::json alignModbusAddresses(std::optional<std::vector<int>> channels = std::nullopt,
+                                       std::optional<double> timeout = std::nullopt,
+                                       std::optional<double> poll_interval = std::nullopt,
+                                       std::optional<bool> reconfigure = std::nullopt);
 
   nlohmann::json getPMTStatus(int channel);
   double getPMTVoltage(int channel);
@@ -101,9 +158,13 @@ class FebmgrNamespace {
   void setPMTRateRampup(int channel, int value);
   void setPMTRateRampdown(int channel, int value);
   void setPMTLimitVoltage(int channel, int value);
+  int getPMTLimitVoltage(int channel);
   void setPMTLimitCurrent(int channel, int value);
+  int getPMTLimitCurrent(int channel);
   void setPMTLimitTemperature(int channel, int value);
+  int getPMTLimitTemperature(int channel);
   void setPMTLimitTriptime(int channel, int value);
+  int getPMTLimitTriptime(int channel);
   void setPMTThreshold(int channel, double value);
   double getPMTThreshold(int channel);
   nlohmann::json getPMTAlarm(int channel);
@@ -123,6 +184,17 @@ class FebmgrNamespace {
 
   nlohmann::json getLEDStatus(int channel);
   nlohmann::json getLEDInfo(int channel);
+  nlohmann::json getLEDErrorRegisters(int channel);
+  nlohmann::json getLEDBurstConfig(int channel);
+  void setLEDBurstConfig(int channel, int64_t startTimeS, int64_t startTime4ns,
+                          int64_t flashInterval4ns, int64_t flashCount);
+  void setLEDBurstConfigIn(int channel, int64_t secondsFromNow, int64_t sub4ns,
+                            int64_t flashInterval4ns, int64_t flashCount);
+  int64_t getLEDBurstKey(int channel);
+  void setLEDBurstKey(int channel, int64_t key);
+  void startLEDBurst(int channel);
+  nlohmann::json getLEDBurstStatus(int channel);
+  void clearLEDBurstStatus(int channel);
   nlohmann::json getLEDTriggerStatus(int channel);
   nlohmann::json getLEDBiasStatus(int channel);
   double getLEDBiasVoltage(int channel);
@@ -140,6 +212,13 @@ class FebmgrNamespace {
   void setLEDChannels(int channel, const std::vector<int>& channels,
                        std::optional<bool> append = std::nullopt);
 
+  // Run preparation. channels omitted -> every defined PMT channel (old
+  // behaviour); pass the config's actually-enabled channels to avoid
+  // re-powering ones an operator deliberately disabled.
+  nlohmann::json prepareForRun(std::optional<double> timeout = std::nullopt,
+                                std::optional<std::vector<int>> channels = std::nullopt);
+  nlohmann::json getHVReadyChannels(std::optional<std::vector<int>> channels = std::nullopt);
+
  private:
   BaseRpcClient& client_;
 };
@@ -149,7 +228,58 @@ class FpgaNamespace {
   explicit FpgaNamespace(BaseRpcClient& client) : client_(client) {}
 
   int64_t readRegister(int64_t address);
-  int64_t writeRegister(int64_t address, int64_t value);
+  void writeRegister(int64_t address, int64_t value);
+
+  // Pulser configuration, registers 7 and 60
+  void setPulserFrequency(int frequencyHz);
+  nlohmann::json getPulserFrequency();
+  void setPulserSubhits(int subhits);
+  int getPulserSubhits();
+
+  // Clock configuration and status, registers 3 and 4
+  void setClockSource(const std::string& source);
+  void setClockCable(int cable);
+  nlohmann::json getClockStatus();
+  nlohmann::json getTr32Status();
+  nlohmann::json getErrorCounters();
+  int64_t getTr32Counter();
+
+  // Tr32 and TagT
+  void enableTr32Channel();
+  void disableTr32Channel();
+
+  // ADC calibration
+  void requestAdcCalibration();
+
+  // SPI clock
+  void setSpiClock(int selection);
+  double getSpiClock();
+
+  // FIFO reset
+  std::string setFifoReset(bool reset);
+
+  // Data-shifter timeout, REG_CONTROL bits 0..8
+  void setDataShifterTimeout(int ticks);
+  int getDataShifterTimeout();
+
+  // External trigger window, register 44
+  void setTriggerWindow(int64_t ticks);
+  int64_t getTriggerWindow();
+
+  // Monitoring methods
+  nlohmann::json getDeadtime();
+  nlohmann::json getHousekeeping();
+  nlohmann::json getFifoStatus();
+
+  // Firmware/bitstream information
+  nlohmann::json getFirmwareInfo();
+
+  // Default
+  void setDefaults();
+
+  // Acquisition evproducer
+  std::string startAcquisition(const std::string& host, int port = 5555);
+  std::string stopAcquisition();
 
  private:
   BaseRpcClient& client_;
@@ -165,9 +295,25 @@ class SensorsNamespace {
   BaseRpcClient& client_;
 };
 
+class MonitoringNamespace {
+ public:
+  explicit MonitoringNamespace(BaseRpcClient& client) : client_(client) {}
+
+  // One RPC round trip for a full monitoring cycle - same shape
+  // BuildMssMonitoringSnapshot (m-pmt-daq-interface) used to assemble from
+  // 9 separate calls into sensors/febmgr/fpga: {"sensors":..., "channels":...,
+  // "fpga":{"deadtime":...,"housekeeping":...,"fifo_status":...,
+  // "firmware_info":...,"rate_all":...,"clock":...,"tr32":...}}.
+  nlohmann::json snapshot();
+
+ private:
+  BaseRpcClient& client_;
+};
+
 // client.febmgr.getStatus(...)   -> wire method "febmgr.getStatus"
 // client.fpga.readRegister(...)  -> wire method "fpga.readRegister"
 // client.sensors.read()          -> wire method "sensors.read"
+// client.monitoring.snapshot()   -> wire method "monitoring.snapshot"
 class MSSClient : public BaseRpcClient {
  public:
   explicit MSSClient(const std::string& url, double timeout_sec = 10.0);
@@ -175,6 +321,7 @@ class MSSClient : public BaseRpcClient {
   FebmgrNamespace febmgr;
   FpgaNamespace fpga;
   SensorsNamespace sensors;
+  MonitoringNamespace monitoring;
 };
 
 }  // namespace mpmt_mss

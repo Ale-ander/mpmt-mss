@@ -4,7 +4,7 @@ project(mssclient VERSION 1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "-O3 -Wall")
+set(CMAKE_CXX_FLAGS "-O3 -Wall -Wno-psabi")
 
 find_package(CURL REQUIRED)
 find_package(nlohmann_json REQUIRED)
