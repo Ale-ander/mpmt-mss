@@ -43,8 +43,11 @@ class LSM303Magnet:
 
     def readAll(self):
         output = []
-        # OUTX_L_REG_M..OUTZ_H_REG_M = 6 bytes
-        d = self._read_block(self.address, self.OUTX_L_REG_M, 6)
+        # OUTX_L_REG_M..OUTZ_H_REG_M = 6 bytes - | 0x80 enables auto-increment
+        # of the sub-address across the burst read (same requirement as the
+        # accelerometer's OUT_X_L_A below); without it every byte comes back
+        # from OUTX_L_REG_M itself, never advancing.
+        d = self._read_block(self.address, self.OUTX_L_REG_M | 0x80, 6)
         output.append(self._int16(d[0], d[1]) * self.SCALE)  # X
         output.append(self._int16(d[2], d[3]) * self.SCALE)  # Y
         output.append(self._int16(d[4], d[5]) * self.SCALE)  # Z
@@ -81,11 +84,17 @@ class LSM303Accel:
         data = self.i2cbus.read_i2c_block_data(addr, start_reg, n)
         return bytes(data)
 
+    # HR mode + FS=±2g (CTRL_REG4_A=0x88): 12-bit data left-justified in the
+    # 16-bit output, sensitivity 1 mg/digit after right-shifting by 4 -
+    # dividing the raw 16-bit value directly by 9.81 (as this used to)
+    # skips both, giving values ~1600x too large.
+    SENSITIVITY_G = 0.001  # g per digit, HR mode, FS=+-2g
+
     def readAll(self):
         output = []
         # auto-increment: OR 0x80 on start register
         d = self._read_block(self.address, self.OUT_X_L_A | 0x80, 6)
-        output.append(self._int16(d[0], d[1]) / 9.81)  # X
-        output.append(self._int16(d[2], d[3]) / 9.81)  # Y
-        output.append(self._int16(d[4], d[5]) / 9.81)  # Z
+        output.append((self._int16(d[0], d[1]) >> 4) * self.SENSITIVITY_G)  # X, in g
+        output.append((self._int16(d[2], d[3]) >> 4) * self.SENSITIVITY_G)  # Y
+        output.append((self._int16(d[4], d[5]) >> 4) * self.SENSITIVITY_G)  # Z
         return output
