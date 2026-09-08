@@ -416,15 +416,10 @@ class FPGA:
         timeHex = f"{timeValue:08x}"
         versionHex = f"{versionValue:08x}"
 
-        major = versionHex[0]
-        minorText = versionHex[1:3]
-        patchText = versionHex[3:] or "0"
-        minor = int(minorText, 16)
-        patch = int(patchText, 16)
-        version = f"v{major}.{minor}.{patch}"
+        patchText = versionHex[4:] or "0"
 
         return {
-            "version": version,
+            "version": f"v{int(versionHex[:2])}.{int(versionHex[2:4], 16)}.{int(patchText, 16)}",
             "bitstreamDate": f"{dateHex[6:8]}-{dateHex[4:6]}-{dateHex[0:4]}",
             "bitstreamTime": f"{timeHex[0:2]}:{timeHex[2:4]}:{timeHex[4:6]}",
             "commitSha": f"{shaValue:08x}"
